@@ -43,6 +43,30 @@ Then **Cursor → Settings → MCP → gmail-local** and **Reload Window**.
 - Never commit `gmail_user_token.json`, `gmail_desktop_oauth.json`, or `gmail_mcp.env`.
 - Do not share OAuth redirect URLs containing `code=`.
 
+## Git commits from a Cursor remote / agent shell
+
+When `CURSOR_AGENT=1`, **git commit** in that environment may append  
+`Co-authored-by: Cursor <cursoragent@cursor.com>` to the message. GitHub then shows **Cursor** next to you.
+
+To record commits **only** as Yegmina, use a minimal environment for amend/commit, for example:
+
+```bash
+MSG=$(mktemp)
+cat >"$MSG" <<'EOF'
+Your subject line
+
+Body line one.
+EOF
+env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/local/bin" \
+  GIT_DIR="$(pwd)/.git" GIT_WORK_TREE="$(pwd)" \
+  GIT_AUTHOR_NAME=Yegmina GIT_AUTHOR_EMAIL=123106244+Yegmina@users.noreply.github.com \
+  GIT_COMMITTER_NAME=Yegmina GIT_COMMITTER_EMAIL=123106244+Yegmina@users.noreply.github.com \
+  /usr/bin/git commit -F "$MSG"   # or: commit --amend -F "$MSG"
+rm -f "$MSG"
+```
+
+Use normal **`git push`** (SSH) yourself — not Cursor Agent push automation.
+
 ## Publish to GitHub (run locally as Yegmina)
 
 Do **not** use Cursor Agent automated push; use normal `git` on your machine.
