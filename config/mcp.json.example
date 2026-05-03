@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "gmail-local": {
+      "command": "/ABSOLUTE/PATH/TO/python",
+      "args": ["/ABSOLUTE/PATH/TO/gmail_mcp_stdio_server.py"]
+    },
+    "gmail": {
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "auth": {
+        "CLIENT_ID": "${env:GMAIL_MCP_CLIENT_ID}",
+        "CLIENT_SECRET": "${env:GMAIL_MCP_CLIENT_SECRET}",
+        "scopes": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose"
+        ]
+      }
+    }
+  }
+}
