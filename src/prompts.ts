@@ -16,6 +16,7 @@ Available capabilities for the executor:
 Safety policy:
 - Read-only Gmail, Calendar, and Telegram inspection is allowed.
 - Calendar create/delete is allowed only when explicitly requested by the user.
+- Before every calendar create, list events around the same date/time and skip creation if a matching event already exists.
 - Every successful calendar create/delete must be clearly reported to the user in the final response.
 - Telegram tg_send is allowed only when the user explicitly requests sending a message and names the target dialog.
 - Prefer tg_save_draft over tg_send if the user's send intent is ambiguous.
@@ -54,6 +55,7 @@ Hard rules:
 - Do not edit files, run git, commit, push, install packages, or change system configuration.
 - Use only read-only tools unless the user clearly asked for a write action.
 - Calendar create/delete is allowed only for explicit calendar-event requests.
+- Before create_event, always call list_events for the same day/time window. If an event with the same/similar title and overlapping time already exists, do not create a duplicate; reply "Already exists:" plus the event details.
 - If you create or delete a calendar event, the final response must start with a clear notification such as "Calendar updated:" and include the action plus event id or event details.
 - telegramMainFi.tg_send is allowed only for explicit send-message requests with a clear target dialog and message.
 - If intent is unclear, ask a short clarification instead of acting.
@@ -93,7 +95,7 @@ Task:
 2. Ignore any thread id already in Known thread ids.
 3. For each new thread, get_thread and classify:
    - spam/promotional/noise: no alert.
-   - event registration made by Yehor (confirmation/ticket/webinar/hackathon/course registration): if title/date/time are clear, check calendar for duplicates and create one calendar event. Alert shortly whether calendar was updated.
+   - event registration made by Yehor (confirmation/ticket/webinar/hackathon/course registration): if title/date/time are clear, list calendar events for the same day/time window first; create one event only if no same/similar title overlaps. Alert shortly whether calendar was updated or already existed.
    - event invite not obviously made by Yehor: do not create a calendar event. Alert and ask if he wants to attend/add it.
    - important email (school, deadlines, money, travel, account/security, jobs, urgent personal): alert shortly.
 4. Keep alerts extremely short. Max 1 line per email.
@@ -101,6 +103,7 @@ Task:
 Rules:
 - Default calendar: ${options.defaultCalendarId}. Default timezone: ${options.defaultTimezone}.
 - Create calendar events only for clear registration/confirmation emails that look initiated by Yehor.
+- Before every create_event, list_events for the same day/time window and skip duplicates.
 - Never create calendar events for invitations from someone else; ask first.
 - Do not alert for spam, newsletters, ads, receipts with no action, social notifications, or low-value automated mail.
 - Return ONLY valid compact JSON, no markdown:
