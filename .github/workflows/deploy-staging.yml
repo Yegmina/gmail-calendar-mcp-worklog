@@ -1,0 +1,31 @@
+# Redeploy when `staging` is updated.
+#
+# Configure (repo → Settings → Secrets and variables → Actions):
+#   STAGING_DEPLOY_WEBHOOK_URL — optional; POST URL your host/PaaS calls to pull & restart
+#     (e.g. Coolify/Portainer/Railway deploy hook, or your own small endpoint).
+#   If unset, the job succeeds with a notice so CI stays green until you add the secret.
+
+name: Deploy staging
+
+on:
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger staging redeploy hook
+        env:
+          WEBHOOK: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::Set Actions secret STAGING_DEPLOY_WEBHOOK_URL to POST your server's deploy endpoint."
+            exit 0
+          fi
+          curl -fsS -m 180 -X POST "$WEBHOOK"

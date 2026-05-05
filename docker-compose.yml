@@ -1,0 +1,19 @@
+services:
+  manager4yehor-bot:
+    build:
+      context: .
+    image: manager4yehor-sdk-bot:local
+    container_name: manager4yehor-sdk-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BOT_WORKDIR: /app
+      GMAIL_MCP_PYTHON: /opt/gmail-venv/bin/python
+      GMAIL_MCP_SERVER_SCRIPT: /root/.cursor/scripts/gmail_mcp_stdio_server.py
+      TELEGRAM_NODE: /usr/local/bin/node
+      TELEGRAM_MCP_SCRIPT: /root/.cursor/telegram-mcp-cursor.js
+      TELEGRAM_MCP_BINARY: /root/.cursor/bin/telegram-mcp
+    volumes:
+      - /root/.cursor:/root/.cursor
+      - /root/.telegram-mcp:/root/.telegram-mcp
