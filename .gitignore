@@ -20,6 +20,7 @@ __pycache__/
 # Node / SDK bot
 node_modules/
 dist/
+data/
 .env
 .env.*
 !.env.example

@@ -9,11 +9,16 @@ services:
       - .env
     environment:
       BOT_WORKDIR: /app
+      EMAIL_MONITOR_STATE_PATH: /app/data/email-monitor-state.json
       GMAIL_MCP_PYTHON: /opt/gmail-venv/bin/python
       GMAIL_MCP_SERVER_SCRIPT: /root/.cursor/scripts/gmail_mcp_stdio_server.py
       TELEGRAM_NODE: /usr/local/bin/node
       TELEGRAM_MCP_SCRIPT: /root/.cursor/telegram-mcp-cursor.js
       TELEGRAM_MCP_BINARY: /root/.cursor/bin/telegram-mcp
     volumes:
+      - bot-data:/app/data
       - /root/.cursor:/root/.cursor
       - /root/.telegram-mcp:/root/.telegram-mcp
+
+volumes:
+  bot-data:

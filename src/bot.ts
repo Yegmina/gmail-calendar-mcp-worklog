@@ -3,6 +3,7 @@ import type { Context } from "telegraf";
 import { loadConfig, isAllowedTelegramUser } from "./config.js";
 import { runPlannerExecutor } from "./agentRunner.js";
 import { appendChatTurn, getChatContext } from "./chatMemory.js";
+import { rememberNotificationChatId, startEmailMonitor } from "./emailMonitor.js";
 import { downloadTelegramImage, imageCaption } from "./telegramMedia.js";
 import { transcribeTelegramVoice } from "./voice.js";
 import { chunkPlainTextForTelegram, modelOutputToTelegramHtml } from "./telegramFormat.js";
@@ -16,6 +17,7 @@ async function main(): Promise<void> {
 
   bot.start((ctx) => {
     if (!isAllowedTelegramUser(config, ctx.from?.id)) return ctx.reply("Not allowed.");
+    if (ctx.chat?.id !== undefined) void rememberNotificationChatId(config, ctx.chat.id);
     return ctx.reply(
       "Manager4Yehor online. I can use gmail-local (Gmail/Calendar) and telegramMainFi MCP tools through a local Cursor SDK agent.",
     );
@@ -113,6 +115,7 @@ async function main(): Promise<void> {
 
   const me = await bot.telegram.getMe();
   void bot.launch({ dropPendingUpdates: true });
+  startEmailMonitor(bot, config);
   console.log(`Manager4Yehor SDK bot is running as @${me.username}.`);
 
   async function handleUserRequest(ctx: Context, text: string, images?: Array<{ data: string; mimeType: string }>): Promise<void> {
@@ -123,6 +126,7 @@ async function main(): Promise<void> {
     }
 
     appendChatTurn(chatId, "user", images?.length ? `${text} [${images.length} image(s) attached]` : text);
+    await rememberNotificationChatId(config, chatId);
     await ctx.sendChatAction("typing");
     const status = await ctx.reply("Working...");
     try {

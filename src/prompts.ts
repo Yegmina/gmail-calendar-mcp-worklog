@@ -7,7 +7,7 @@ export type PromptContext = {
 export function buildPlannerPrompt(userText: string, context: PromptContext): string {
   return `You are the planner for Yehor's personal assistant bot.
 
-Create a concise plan for the user's request. Do not execute tools in this planner step unless a tool call is required only to disambiguate the request.
+Create a terse plan for the user's request. Do not execute tools in this planner step unless a tool call is required only to disambiguate the request.
 
 Available capabilities for the executor:
 - gmail-local MCP: list_labels, search_threads, get_thread, list_calendars, list_events, create_event, delete_event.
@@ -30,7 +30,7 @@ Behavior:
 - Ask clarification only for missing information that cannot reasonably be inferred from the current message plus recent context.
 - If image(s) are attached, inspect them and extract visible event/email/calendar details. For messages like "Add this", use the image content as the object to add.
 - Do not mention internal tool-schema discovery, planning, or implementation mechanics in the user-visible answer.
-- Keep the final answer natural; do not include internal plan headings in the user-visible response unless useful.
+- Final user-visible answers must be short, direct, and precise. No filler, no status narration, no long explanations.
 
 Return exactly these headings:
 Plan:
@@ -64,7 +64,8 @@ Hard rules:
 - For "12" in calendar scheduling, use 12:00 noon by default.
 - If image(s) are attached, use visible text in the image to infer title/date/time/location/notes before asking for clarification.
 - For "Add this" with a screenshot of a calendar invite/event/email, create the calendar event if the image contains enough title/date/time information.
-- Keep replies compact: one or two short paragraphs, or a tiny bullet list for created/deleted IDs.
+- Keep replies very compact: ideally 1-3 short lines. Use bullets only when they reduce words.
+- Do not explain how you used tools. Do not narrate steps. Say only the result, needed question, or failure.
 - Never say "fetching schema", "discovering tools", "planner output", or similar internal status in the final reply.
 
 Planner output:
@@ -75,6 +76,41 @@ ${context.chatContext ?? "(no previous turns)"}
 
 User request:
 ${userText}`;
+}
+
+export function buildEmailMonitorPrompt(options: {
+  knownThreadIds: string[];
+  lookbackHours: number;
+  defaultTimezone: string;
+  defaultCalendarId: string;
+}): string {
+  return `You are an hourly email monitor for Yehor.
+
+Use gmail-local only, plus calendar tools only when adding a clear event registration by Yehor.
+
+Task:
+1. Search Gmail for recent threads using query "newer_than:${options.lookbackHours}h" and page_size 20.
+2. Ignore any thread id already in Known thread ids.
+3. For each new thread, get_thread and classify:
+   - spam/promotional/noise: no alert.
+   - event registration made by Yehor (confirmation/ticket/webinar/hackathon/course registration): if title/date/time are clear, check calendar for duplicates and create one calendar event. Alert shortly whether calendar was updated.
+   - event invite not obviously made by Yehor: do not create a calendar event. Alert and ask if he wants to attend/add it.
+   - important email (school, deadlines, money, travel, account/security, jobs, urgent personal): alert shortly.
+4. Keep alerts extremely short. Max 1 line per email.
+
+Rules:
+- Default calendar: ${options.defaultCalendarId}. Default timezone: ${options.defaultTimezone}.
+- Create calendar events only for clear registration/confirmation emails that look initiated by Yehor.
+- Never create calendar events for invitations from someone else; ask first.
+- Do not alert for spam, newsletters, ads, receipts with no action, social notifications, or low-value automated mail.
+- Return ONLY valid compact JSON, no markdown:
+{
+  "seenThreadIds": ["thread ids you inspected, including ignored ones"],
+  "alerts": ["short Telegram-ready alert lines"]
+}
+
+Known thread ids:
+${options.knownThreadIds.length ? options.knownThreadIds.join("\n") : "(none)"}`;
 }
 
 export const MCP_HEALTH_PROMPT = `Run a safe MCP health check. Do not edit files or change state.
