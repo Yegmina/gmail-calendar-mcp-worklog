@@ -63,17 +63,9 @@ After a normal reply, if `MEMORY_AGENT_UPDATES=true`, an async pass may update `
 
 ## MCP Health Test
 
-`npm run mcp:health` asks the SDK agent to call (among others):
+`npm run mcp:health` asks the SDK agent to call a small set of MCP tools and return a short OK/FAIL report. That list includes Gmail and Calendar reads, **`gmail-local.list_tasklists`** (Google Tasks), **`telegramMainFi.tg_me`**, and **`telegramMainFi.tg_dialogs`**.
 
-- `gmail-local.list_calendars`
-- `gmail-local.list_tasklists`
-- `gmail-local.search_threads`
-- `gmail-local.get_thread` (when a thread exists)
-- `gmail-local.get_message_body` (smoke test with a small `max_body_chars`)
-- `telegramMainFi.tg_me`
-- `telegramMainFi.tg_dialogs`
-
-It should return a compact OK/FAIL report.
+If Tasks was recently added to your GCP project or consent screen, finish **`gmail_list_recent.py --auth`** on the host that owns `gmail_user_token.json` before expecting `list_tasklists` to pass; a stale token often shows up as insufficient scopes.
 
 ## Debugging with Telegram MCP (`tg_dialog`)
 

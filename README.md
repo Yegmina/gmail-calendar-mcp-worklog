@@ -1,6 +1,6 @@
 # gmail-calendar-mcp-worklog
 
-Documentation and scripts for **Gmail + Google Calendar** integration with **Cursor**, including a **stdio MCP** (`gmail-local`) suitable for **SSH / remote** workspaces.
+Documentation and scripts for **Gmail**, **Google Calendar**, and **Google Tasks** with **Cursor**, including a **stdio MCP** (`gmail-local`) that runs on the same host as your OAuth token (typical for **SSH / remote** workspaces).
 
 **Author:** [Yegmina](https://github.com/Yegmina)
 
@@ -13,15 +13,17 @@ Documentation and scripts for **Gmail + Google Calendar** integration with **Cur
 
 ## Quick setup (summary)
 
-1. Create a GCP project; enable **Gmail API** and **Google Calendar API**.
-2. Configure **OAuth consent** (external + test users as needed). **Data access** must include:
+1. Create a GCP project and enable **Gmail API**, **Google Calendar API**, and **Google Tasks API** (`tasks.googleapis.com`) in that project.
+2. Configure **OAuth consent** (external + test users as needed). Under **Data access**, add these scope URLs and keep them saved:
    - `https://www.googleapis.com/auth/gmail.modify`
    - `https://www.googleapis.com/auth/calendar`
+   - `https://www.googleapis.com/auth/tasks`
 3. Create a **Desktop** OAuth client; download JSON → `~/.cursor/secrets/gmail_desktop_oauth.json` (chmod 600).
 4. Python venv: `python3 -m venv ~/.cursor/gmail-venv && ~/.cursor/gmail-venv/bin/pip install -r requirements.txt`
 5. Install scripts under `~/.cursor/scripts/` (copy from this repo or symlink).
-6. On the **same host** as Cursor remote:  
-   `~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth`
+6. On the **same host** as Cursor remote (or any machine that should hold the token), run:  
+   `~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth`  
+   If you add or change scopes later, run `--auth` again so `gmail_user_token.json` picks them up.
 7. Merge **`config/mcp.json.example`** into your `~/.cursor/mcp.json` with **absolute** paths to your venv + `gmail_mcp_stdio_server.py`.
 8. For **hosted** Gmail MCP, fill `gmail_mcp.env` from **`import_gmail_mcp_oauth_from_console_json.sh`** and use env-based ID/secret in `mcp.json` — see example.
 
@@ -34,9 +36,11 @@ bash scripts/gmail_mcp_integration_check.sh
 ~/.cursor/gmail-venv/bin/python scripts/gmail_mcp_rw_selftest.py
 ```
 
-Paths use `$HOME/.cursor` for secrets and venv by default (`GMAIL_MCP_HOME` can override secrets dir — see `google_personal_oauth.py`).
+The integration script checks that `gmail_user_token.json` (if present) includes the Gmail, Calendar, and Tasks scopes expected by `gmail-local`. It does not call Google APIs with your secrets.
 
-Then **Cursor → Settings → MCP → gmail-local** and **Reload Window**.
+Paths use `$HOME/.cursor` for secrets and venv by default (`GMAIL_MCP_HOME` can override the secrets directory — see `google_personal_oauth.py`).
+
+Then open **Cursor → Settings → MCP**, ensure **gmail-local** is enabled, and **Reload Window** after any token or scope change.
 
 ## Security
 

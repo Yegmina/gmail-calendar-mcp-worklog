@@ -1,16 +1,16 @@
-# Gmail + Google Calendar + Cursor MCP — work log
+# Gmail, Calendar, Tasks, and Cursor MCP — work log
 
-Chronological record of design decisions, failures, and fixes while wiring **personal Gmail** and **Google Calendar** to **Cursor** via a **local stdio MCP** on a remote Linux host (e.g. SSH to `srv1359027`), plus optional **Google-hosted Gmail MCP**.
+Chronological record of design decisions, failures, and fixes while wiring **personal Gmail**, **Google Calendar**, and **Google Tasks** to **Cursor** via a **local stdio MCP** on a remote Linux host (for example SSH to `srv1359027`), plus optional **Google-hosted Gmail MCP**.
 
 **Owner / Git author:** [Yegmina](https://github.com/Yegmina) (Yehor Tereshchenko).  
-**Date of this document:** 2026-05-03.
+**Date of this document:** 2026-05-06.
 
 ---
 
 ## 1. Goals
 
-- Use **Gmail** and **Google Calendar** from **Cursor** when the workspace is on **SSH** (token and Python must run on the server).
-- Support **read** mail and calendar, and **write** calendar (create/delete events); Gmail **write** verified via API (draft round-trip) — MCP initially exposed Gmail **read** tools only.
+- Use **Gmail**, **Google Calendar**, and **Google Tasks** from **Cursor** when the workspace is on **SSH** (token and Python must run on the server).
+- Support **read** mail and calendar, **write** calendar (create/delete events), and **read/write** Tasks through MCP tools; Gmail **write** was verified via API (draft round-trip) but MCP still exposes Gmail **read** tools only for agents.
 - Keep **GCP** for this integration **separate** from the StudyShorts / Play billing project (see `docs/gcp-isolation.md`).
 
 ---
@@ -19,7 +19,7 @@ Chronological record of design decisions, failures, and fixes while wiring **per
 
 | Piece | Role |
 |--------|------|
-| **GCP project** (“Gmail MCP Personal”, id example `gmail-mcp-personal-495219`) | Enables **Gmail API**, **Google Calendar API**; OAuth consent; Desktop + Web clients. |
+| **GCP project** (“Gmail MCP Personal”, id example `gmail-mcp-personal-495219`) | Enables **Gmail API**, **Google Calendar API**, **Google Tasks API**; OAuth consent; Desktop + Web clients. |
 | **Desktop OAuth client JSON** | Saved as `~/.cursor/secrets/gmail_desktop_oauth.json` — used for **paste-redirect** auth on the server (`http://localhost` redirect). |
 | **User token** | `~/.cursor/secrets/gmail_user_token.json` — refresh token + scopes; **chmod 600**; never commit. |
 | **`gmail-local` MCP** | Stdio: `python gmail_mcp_stdio_server.py` on the **same machine** as the token (Critical for SSH). |
@@ -41,14 +41,20 @@ Chronological record of design decisions, failures, and fixes while wiring **per
 - **Issue (user-facing):** Google OAuth **`invalid_scope`** — response indicated **`…/auth/gmail`** was **invalid** for that client/consent configuration while **`calendar` was valid**.
 - **Cause (typical):** `auth/gmail` not registered on consent **Data access**, or Gmail API / scope mismatch; full `gmail` is also a heavy scope.
 
-### 3.3 Final Desktop token scopes
+### 3.3 Gmail and Calendar on the Desktop token
 
 - **`https://www.googleapis.com/auth/gmail.modify`** — broad mail operations (read, compose, send, mutate) without using the `auth/gmail` string that failed for this project.
 - **`https://www.googleapis.com/auth/calendar`** — full calendar access for listing calendars and event CRUD.
 
-**GCP:** Under **Google Auth Platform → Data access**, add (and save) those exact URLs. **Gmail API** + **Google Calendar API** must be enabled.
+**GCP:** Under **Google Auth Platform → Data access**, add (and save) those URLs. **Gmail API** and **Google Calendar API** must be enabled.
 
-**Re-consent:** After any scope change, run `gmail_list_recent.py --auth` on the host that holds the token.
+### 3.4 Google Tasks
+
+- **`https://www.googleapis.com/auth/tasks`** — list task lists, list tasks, create/update/delete tasks (same user token as Gmail and Calendar).
+- **Enable** the **Google Tasks API** in the same GCP project as the Desktop client. Opening the Tasks API page in the console and clicking enable is enough; the API id is `tasks.googleapis.com`.
+- Put the same scope URL on the OAuth consent **Data access** screen. If the scope is missing, OAuth may succeed for mail and calendar but Task calls return **403** with “insufficient authentication scopes” until you add the scope and run `gmail_list_recent.py --auth` again.
+
+**Re-consent:** After any scope change, run `gmail_list_recent.py --auth` on the host that holds `gmail_user_token.json`, then reload Cursor MCP so tools use the refreshed token.
 
 ---
 
@@ -81,8 +87,8 @@ Cursor exposes this server as MCP id **`user-gmail-local`** (internal) with disp
 
 1. **`gmail_list_recent.py --auth`** — exchange code; then list mail.
 2. **`gmail_mcp_rw_selftest.py`** — calendar create/delete + Gmail draft create/delete (API parity).
-3. **`gmail_mcp_integration_check.sh`** — local checks: `mcp.json`, env vars, token scopes (no Google calls with secrets).
-4. **Cursor MCP live calls** — e.g. `list_calendars`, `search_threads`, `create_event`, `delete_event` via the agent (confirmed working).
+3. **`gmail_mcp_integration_check.sh`** — local checks for `mcp.json`, optional hosted env vars, and (without calling Google) that the saved token’s `scopes` list includes Gmail, Calendar, and Tasks when `gmail_user_token.json` exists.
+4. **Cursor MCP live calls** — for example `list_calendars`, `search_threads`, `create_event`, `delete_event`, and task tools such as `list_tasklists` / `list_tasks` once the token includes the Tasks scope.
 
 ---
 
