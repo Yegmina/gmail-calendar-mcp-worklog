@@ -1,11 +1,11 @@
-"""Shared OAuth paths and scopes for personal Gmail + Google Calendar (Desktop client).
+"""Shared OAuth paths and scopes for personal Gmail + Google Calendar + Google Tasks (Desktop client).
 
 Token file: ~/.cursor/secrets/gmail_user_token.json
 Client JSON: ~/.cursor/secrets/gmail_desktop_oauth.json
 
-GCP (project Gmail MCP Personal): enable Gmail API + Google Calendar API.
+GCP (project Gmail MCP Personal): enable Gmail API + Google Calendar API + Google Tasks API.
 
-Scopes are broad mail + calendar access for agents. We use **gmail.modify** (not …/auth/gmail):
+Scopes are broad mail + calendar + tasks access for agents. We use **gmail.modify** (not …/auth/gmail):
 Google may return `invalid_scope` for `…/auth/gmail` until that exact scope is on the
 consent screen; **gmail.modify** covers read/send/label/trash for the Gmail API in practice.
 
@@ -28,6 +28,7 @@ os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/tasks",
 ]
 
 DEFAULT_SECRETS_DIR = Path(os.environ.get("GMAIL_MCP_HOME", Path.home() / ".cursor" / "secrets"))
@@ -37,10 +38,11 @@ TOKEN_FILE = DEFAULT_SECRETS_DIR / "gmail_user_token.json"
 
 def auth_help_message() -> str:
     return (
-        "No valid Google token (Gmail.modify + Calendar) on this host. On this machine run once:\n"
+        "No valid Google token (Gmail.modify + Calendar + Tasks) on this host. On this machine run once:\n"
         "  ~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth\n"
         "Requires ~/.cursor/secrets/gmail_desktop_oauth.json; creates gmail_user_token.json.\n"
-        "In GCP enable Gmail + Calendar APIs; Data access must include auth/gmail.modify + auth/calendar, then re-auth."
+        "In GCP enable Gmail + Calendar + Tasks APIs; Data access must include auth/gmail.modify, "
+        "auth/calendar, and auth/tasks, then re-auth."
     )
 
 
@@ -88,7 +90,7 @@ def get_creds(*, require_full_scopes: bool = True) -> Credentials:
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
         if require_full_scopes and not scopes_sufficient(creds):
             print(
-                "Token refreshed but missing required Gmail/Calendar scopes. "
+                "Token refreshed but missing required Gmail/Calendar/Tasks scopes. "
                 "Run: ~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth",
                 file=sys.stderr,
             )
@@ -97,7 +99,7 @@ def get_creds(*, require_full_scopes: bool = True) -> Credentials:
     if creds and creds.valid:
         if require_full_scopes and not scopes_sufficient(creds):
             print(
-                "Saved token does not match current scopes (need full Gmail + Calendar). Run with --auth:\n"
+                "Saved token does not match current scopes (need full Gmail + Calendar + Tasks). Run with --auth:\n"
                 "  ~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth",
                 file=sys.stderr,
             )

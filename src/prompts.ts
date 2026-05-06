@@ -22,14 +22,16 @@ export function buildPlannerPrompt(userText: string, context: PromptContext): st
 Create a terse plan for the user's request. Do not execute tools in this planner step unless a tool call is required only to disambiguate the request.
 
 Available capabilities for the executor:
-- gmail-local MCP: list_labels, search_threads, get_thread, get_message_body (full decoded body + attachment metadata; use message_id from get_thread), list_calendars, list_events, create_event, delete_event.
+- gmail-local MCP: list_labels, search_threads, get_thread, get_message_body (full decoded body + attachment metadata; use message_id from get_thread), list_calendars, list_events, create_event, delete_event, list_tasklists, list_tasks, create_task, update_task, delete_task (Google Tasks; default tasklist id @default).
 - telegramMainFi MCP: tg_me, tg_dialogs, tg_dialog, tg_save_draft, tg_send, tg_read.
 
 Safety policy:
-- Read-only Gmail, Calendar, and Telegram inspection is allowed.
+- Read-only Gmail, Calendar, Google Tasks (list_tasklists, list_tasks), and Telegram inspection is allowed.
 - Calendar create/delete is allowed only when explicitly requested by the user.
+- Google Task create/update/complete/delete is allowed only when explicitly requested by the user.
 - Before every calendar create, list events around the same date/time and skip creation if a matching event already exists.
 - Every successful calendar create/delete must be clearly reported to the user in the final response.
+- Every successful Google Task create/update/delete or completion must be clearly reported (e.g. "Task updated:" with task title or id).
 - Telegram tg_send is allowed only when the user explicitly requests sending a message and names the target dialog.
 - Prefer tg_save_draft over tg_send if the user's send intent is ambiguous.
 - Gmail destructive mutation and email sending must not be attempted; this MCP currently exposes Gmail read-only tools.
@@ -69,8 +71,10 @@ Hard rules:
 - Do not edit files, run git, commit, push, install packages, or change system configuration.
 - Use only read-only tools unless the user clearly asked for a write action.
 - Calendar create/delete is allowed only for explicit calendar-event requests.
+- Google Task mutations (create_task, update_task, delete_task) are allowed only for explicit task/reminder/todo requests from the user.
 - Before create_event, always call list_events for the same day/time window. If an event with the same/similar title and overlapping time already exists, do not create a duplicate; reply "Already exists:" plus the event details.
 - If you create or delete a calendar event, the final response must start with a clear notification such as "Calendar updated:" and include the action plus event id or event details.
+- If you create, update, complete, or delete a Google Task, the final response must state that clearly (e.g. "Task added:" / "Task completed:") with enough to identify the task.
 - telegramMainFi.tg_send is allowed only for explicit send-message requests with a clear target dialog and message.
 - If intent is unclear, ask a short clarification instead of acting.
 - Gmail write/send/destructive actions are not available in the MCP and must not be attempted.
@@ -185,9 +189,10 @@ export const MCP_HEALTH_PROMPT = `Run a safe MCP health check. Do not edit files
 
 Use these MCP tools:
 1. gmail-local list_calendars with max_results 5.
-2. gmail-local search_threads with empty query and page_size 1.
-3. If step 2 returned a thread id, gmail-local get_thread with that id; then gmail-local get_message_body with the newest message_id from that output (last message_id= line), max_body_chars 8000.
-4. telegramMainFi tg_me.
-5. telegramMainFi tg_dialogs with only_unread true.
+2. gmail-local list_tasklists with max_results 5.
+3. gmail-local search_threads with empty query and page_size 1.
+4. If step 3 returned a thread id, gmail-local get_thread with that id; then gmail-local get_message_body with the newest message_id from that output (last message_id= line), max_body_chars 8000.
+5. telegramMainFi tg_me.
+6. telegramMainFi tg_dialogs with only_unread true.
 
-Return a compact status report with OK/FAIL for Gmail, Calendar (read), full message body, and Telegram.`;
+Return a compact status report with OK/FAIL for Gmail, Calendar (read), Google Tasks (read), full message body, and Telegram.`;

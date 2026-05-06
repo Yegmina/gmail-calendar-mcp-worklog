@@ -6,12 +6,12 @@ CUR="${HOME}/.cursor"
 MCP_JSON="${CUR}/mcp.json"
 TOKEN_JSON="${CUR}/secrets/gmail_user_token.json"
 
-echo "== Gmail + Calendar MCP (Cursor) integration check =="
+echo "== Gmail + Calendar + Tasks MCP (Cursor) integration check =="
 echo "(Using CUR=${CUR})"
 echo
 
 if [[ -f "$MCP_JSON" ]] && grep -q '"gmail-local"' "$MCP_JSON"; then
-  echo "[ok] $MCP_JSON defines mcpServers.gmail-local (stdio: Gmail + Calendar)"
+  echo "[ok] $MCP_JSON defines mcpServers.gmail-local (stdio: Gmail + Calendar + Tasks)"
 else
   echo "[!!] gmail-local missing from $MCP_JSON (needed for SSH token MCP)"
 fi
@@ -48,11 +48,13 @@ code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "https://gmailmcp.googlea
 echo "  POST https://gmailmcp.googleapis.com/mcp/v1 → HTTP $code"
 
 echo
-echo "Google Calendar + Gmail (Desktop token uses calendar + gmail.modify):"
+echo "Google Calendar + Gmail + Tasks (Desktop token uses gmail.modify + calendar + tasks):"
 echo "  bash scripts/gcp_enable_personal_google_apis.sh"
+echo "  Console → APIs: enable Google Tasks API (same project)."
 echo "  Console → Data access: add (and keep) scope URLs:"
 echo "    https://www.googleapis.com/auth/gmail.modify"
 echo "    https://www.googleapis.com/auth/calendar"
+echo "    https://www.googleapis.com/auth/tasks"
 echo
 
 if [[ -f "$TOKEN_JSON" ]] && command -v python3 &>/dev/null; then
@@ -64,9 +66,10 @@ scopes = set(d.get('scopes') or [])
 need = {
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/tasks',
 }
 ok = need.issubset(scopes)
-print('  [ok] token has Gmail + Calendar scopes' if ok else '  [!!] token missing scope(s) — run gmail_list_recent.py --auth; add scopes in Data access if needed')
+print('  [ok] token has Gmail + Calendar + Tasks scopes' if ok else '  [!!] token missing scope(s) — run gmail_list_recent.py --auth; enable Tasks API + add tasks scope in Data access if needed')
 sys.exit(0 if ok else 1)
 " 2>/dev/null; then
     :
@@ -81,7 +84,7 @@ print('  [--] scopes in token:', d.get('scopes'))
 fi
 
 echo
-echo "Desktop OAuth test script (Gmail + Calendar):"
+echo "Desktop OAuth test script (Gmail + Calendar + Tasks):"
 VENV_PY="${CUR}/gmail-venv/bin/python"
 if [[ -f "$TOKEN_JSON" ]]; then
   echo "  [ok] gmail_user_token.json present — try:"
@@ -103,4 +106,4 @@ fi
 
 echo
 echo "Next: Settings → MCP → gmail-local on → Reload Window."
-echo "MCP tools include list_labels, search_threads, get_thread, get_message_body, list_calendars, list_events, create_event, delete_event."
+echo "MCP tools include list_labels, search_threads, get_thread, get_message_body, list_calendars, list_events, create_event, delete_event, list_tasklists, list_tasks, create_task, update_task, delete_task."

@@ -3,7 +3,7 @@
 This project runs a local Cursor SDK agent behind the Telegram bot
 `@Manager4Yehor_bot`. The agent uses inline stdio MCP server definitions for:
 
-- `gmail-local` — Gmail + Google Calendar via `/root/.cursor/scripts/gmail_mcp_stdio_server.py`
+- `gmail-local` — Gmail, Google Calendar, and Google Tasks via `/root/.cursor/scripts/gmail_mcp_stdio_server.py` (same desktop OAuth token; after adding Tasks, **re-run** `gmail_list_recent.py --auth` on that host)
 - `telegramMainFi` — Telegram user session via `/root/.cursor/telegram-mcp-cursor.js`
 
 Run it on the same VPS that already has the Gmail token and Telegram session.
@@ -66,6 +66,7 @@ After a normal reply, if `MEMORY_AGENT_UPDATES=true`, an async pass may update `
 `npm run mcp:health` asks the SDK agent to call (among others):
 
 - `gmail-local.list_calendars`
+- `gmail-local.list_tasklists`
 - `gmail-local.search_threads`
 - `gmail-local.get_thread` (when a thread exists)
 - `gmail-local.get_message_body` (smoke test with a small `max_body_chars`)
@@ -131,9 +132,11 @@ This avoids depending on the host Python venv inside the container.
 
 The planner/executor prompts are conservative:
 
-- Read-only Gmail, Calendar, and Telegram inspection is allowed.
+- Read-only Gmail, Calendar, Google Tasks (listing), and Telegram inspection is allowed.
 - Calendar create/delete is allowed only for explicit calendar requests.
+- Google Task create/update/delete or completion is allowed only for explicit requests from the user.
 - Every successful calendar create/delete is reported back in Telegram as a visible calendar update notification.
+- Every successful task change should be reported clearly (task title or id).
 - `telegramMainFi.tg_send` is allowed only when the user clearly asks to send a message and names the target dialog.
 - The Gmail MCP currently exposes read-only tools only, so the bot must not attempt Gmail send/delete/mutation.
 - The SDK agent is told not to edit files, commit, push, install packages, or change system configuration; **soul** / **memory** files are updated only by separate bot-controlled passes with JSON output — not via the main executor tools.

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Gmail + Google Calendar MCP (stdio) for remote/SSH Cursor — uses token on *this* machine.
+"""Gmail + Google Calendar + Google Tasks MCP (stdio) for remote/SSH Cursor — uses token on *this* machine.
 
 Uses the same OAuth files as gmail_list_recent.py (Desktop client, paste redirect once).
 
 One-time on *this* host:
-  GCP: enable Google Calendar API for project gmail-mcp-personal-495219.
+  GCP: enable Gmail API + Google Calendar API + Google Tasks API for project gmail-mcp-personal-495219.
   ~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth
 
-Scopes: gmail.modify + calendar (see google_personal_oauth.SCOPES).
+Scopes: gmail.modify + calendar + tasks (see google_personal_oauth.SCOPES).
 
 Then enable mcpServers.gmail-local in ~/.cursor/mcp.json and reload Cursor.
 
@@ -29,7 +29,7 @@ from mcp.server.fastmcp import FastMCP
 
 from google_personal_oauth import credentials_for_mcp
 
-mcp = FastMCP("gmail-local (Gmail + Calendar)")
+mcp = FastMCP("gmail-local (Gmail + Calendar + Tasks)")
 
 
 def _creds():
@@ -42,6 +42,10 @@ def _gmail():
 
 def _calendar():
     return build("calendar", "v3", credentials=_creds())
+
+
+def _tasks():
+    return build("tasks", "v1", credentials=_creds())
 
 
 def _parse_iso(dt: str) -> datetime:
@@ -111,6 +115,23 @@ def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + "\n\n… [truncated]"
+
+
+def _normalize_task_due(due: str) -> str | None:
+    """Accept YYYY-MM-DD or full RFC3339; Tasks API expects RFC3339."""
+    s = due.strip()
+    if not s:
+        return None
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return f"{s}T00:00:00.000Z"
+    return s
+
+
+def _trunc_notes(notes: str, max_len: int = 200) -> str:
+    n = notes.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(n) <= max_len:
+        return n
+    return n[:max_len] + "…"
 
 
 @mcp.tool()
@@ -345,6 +366,151 @@ def delete_event(event_id: str, calendar_id: str = "primary") -> str:
         svc = _calendar()
         svc.events().delete(calendarId=(calendar_id.strip() or "primary"), eventId=event_id.strip()).execute()
         return f"deleted event_id={event_id.strip()}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def list_tasklists(max_results: int = 30) -> str:
+    """List Google Task lists (id + title). Use @default for the default list in other task tools."""
+    try:
+        svc = _tasks()
+        max_results = max(1, min(int(max_results), 100))
+        resp = svc.tasklists().list(maxResults=max_results).execute()
+        items = resp.get("items") or []
+        if not items:
+            return "(no task lists)"
+        lines = []
+        for it in items:
+            lines.append(f"id={it.get('id')}\ttitle={it.get('title', '')}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def list_tasks(
+    tasklist_id: str = "@default",
+    show_completed: bool = True,
+    show_hidden: bool = False,
+    max_results: int = 50,
+) -> str:
+    """List tasks in a task list. Returns task_id, title, status, due, notes (truncated)."""
+    try:
+        svc = _tasks()
+        tlist = tasklist_id.strip() or "@default"
+        max_results = max(1, min(int(max_results), 100))
+        resp = (
+            svc.tasks()
+            .list(
+                tasklist=tlist,
+                showCompleted=bool(show_completed),
+                showHidden=bool(show_hidden),
+                maxResults=max_results,
+            )
+            .execute()
+        )
+        tasks = resp.get("items") or []
+        if not tasks:
+            return "(no tasks in list)"
+        lines = []
+        for t in tasks:
+            tid = t.get("id", "?")
+            title = (t.get("title") or "").replace("\t", " ")
+            status = t.get("status") or "?"
+            due = t.get("due") or ""
+            notes_raw = t.get("notes") or ""
+            notes = _trunc_notes(str(notes_raw), 200)
+            lines.append(f"task_id={tid}\tstatus={status}\tdue={due}\ttitle={title}\tnotes={notes}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def create_task(
+    title: str,
+    tasklist_id: str = "@default",
+    notes: str = "",
+    due: str = "",
+) -> str:
+    """Create a Google Task. due: YYYY-MM-DD or RFC3339; empty = no due date."""
+    try:
+        if not title.strip():
+            return "Error: title required"
+        svc = _tasks()
+        tlist = tasklist_id.strip() or "@default"
+        body: dict = {"title": title.strip()}
+        if notes.strip():
+            body["notes"] = notes.strip()
+        due_n = _normalize_task_due(due)
+        if due_n:
+            body["due"] = due_n
+        created = svc.tasks().insert(tasklist=tlist, body=body).execute()
+        return f"created task_id={created.get('id')} tasklist={tlist} title={created.get('title', '')}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def update_task(
+    task_id: str,
+    tasklist_id: str = "@default",
+    title: str = "",
+    notes: str = "",
+    due: str = "",
+    status: str = "",
+) -> str:
+    """Patch a Google Task. status: needsAction or completed. due: use __clear__ to remove due date. Omit fields you do not change (pass empty string)."""
+    try:
+        tid = task_id.strip()
+        if not tid:
+            return "Error: task_id required"
+        tlist = tasklist_id.strip() or "@default"
+        body: dict = {}
+        if title.strip():
+            body["title"] = title.strip()
+        if notes.strip():
+            body["notes"] = notes.strip()
+        d = due.strip()
+        if d == "__clear__":
+            body["due"] = None
+        elif d:
+            due_n = _normalize_task_due(due)
+            if due_n:
+                body["due"] = due_n
+        st = status.strip().lower()
+        if st in ("needsaction", "needs_action"):
+            body["status"] = "needsAction"
+        elif st == "completed":
+            body["status"] = "completed"
+        elif status.strip():
+            return f"Error: status must be needsAction or completed, got {status!r}"
+
+        if not body:
+            return "Error: provide at least one of title, notes, due, status (non-empty)"
+
+        svc = _tasks()
+        updated = svc.tasks().patch(tasklist=tlist, task=tid, body=body).execute()
+        return (
+            f"updated task_id={updated.get('id')} status={updated.get('status')} "
+            f"due={updated.get('due') or ''} title={updated.get('title', '')}"
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def delete_task(task_id: str, tasklist_id: str = "@default") -> str:
+    """Delete a task by id (from list_tasks)."""
+    try:
+        tid = task_id.strip()
+        if not tid:
+            return "Error: task_id required"
+        tlist = tasklist_id.strip() or "@default"
+        svc = _tasks()
+        svc.tasks().delete(tasklist=tlist, task=tid).execute()
+        return f"deleted task_id={tid} tasklist={tlist}"
     except Exception as e:
         return f"Error: {e}"
 

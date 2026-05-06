@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Test Gmail + Google Calendar OAuth and list recent mail (Desktop client JSON).
 
-1. GCP: enable Gmail API + Google Calendar API; OAuth Desktop client JSON at
+1. GCP: enable Gmail API + Google Calendar API + Google Tasks API; OAuth Desktop client JSON at
    ~/.cursor/secrets/gmail_desktop_oauth.json (chmod 600).
 2. First login (interactive):
      ~/.cursor/gmail-venv/bin/python ~/.cursor/scripts/gmail_list_recent.py --auth
 3. Later: same command without --auth lists recent subjects.
 
-Scopes: gmail.modify + calendar (shared token for stdio MCP).
+Scopes: gmail.modify + calendar + tasks (shared token for stdio MCP).
 
 Does not touch studyshortspayservice.
 """
