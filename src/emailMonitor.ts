@@ -6,30 +6,35 @@ import { createLocalAgent, runPromptWithAgent } from "./agentRunner.js";
 import { buildEmailMonitorPrompt } from "./prompts.js";
 import { chunkPlainTextForTelegram, modelOutputToTelegramHtml } from "./telegramFormat.js";
 
-const MAX_SEEN_THREADS = 500;
+const MAX_WATERMARK_THREADS = 500;
 const TELEGRAM_CHUNK = 3500;
 
-type EmailMonitorState = {
-  seenThreadIds: string[];
+export type EmailMonitorState = {
+  /** Gmail thread id -> last processed message id (newest in thread at time of processing). */
+  threadWatermarks: Record<string, string>;
   notificationChatIds?: number[];
   lastCheckedAt?: string;
 };
 
 type MonitorJson = {
-  seenThreadIds?: unknown;
+  threadWatermarks?: unknown;
   alerts?: unknown;
 };
 
 type TelegramApi = Telegraf["telegram"];
 
+const emptyMonitorState = (): EmailMonitorState => ({ threadWatermarks: {} });
+
 export function startEmailMonitor(bot: Telegraf, config: AppConfig): void {
   if (!config.emailMonitorEnabled) {
-    console.log("Email monitor disabled.");
+    console.log(JSON.stringify({ msg: "email_monitor", enabled: false }));
     return;
   }
 
-  if (notificationChatIds(config, { seenThreadIds: [] }).length === 0) {
-    console.warn("Email monitor has no notify chat yet; message the bot once or set TELEGRAM_NOTIFY_CHAT_IDS.");
+  if (notificationChatIds(config, emptyMonitorState()).length === 0) {
+    console.warn(
+      "Email monitor has no notify chat yet; message the bot once (/start or any message) or set TELEGRAM_NOTIFY_CHAT_IDS.",
+    );
   }
 
   let running = false;
@@ -47,7 +52,13 @@ export function startEmailMonitor(bot: Telegraf, config: AppConfig): void {
 
   setTimeout(run, 30_000);
   setInterval(run, config.emailMonitorIntervalMinutes * 60_000);
-  console.log(`Email monitor running every ${config.emailMonitorIntervalMinutes} minute(s).`);
+  console.log(
+    JSON.stringify({
+      msg: "email_monitor_started",
+      intervalMinutes: config.emailMonitorIntervalMinutes,
+      lookbackHours: config.emailMonitorLookbackHours,
+    }),
+  );
 }
 
 export async function rememberNotificationChatId(config: AppConfig, chatId: number): Promise<void> {
@@ -68,28 +79,55 @@ function notificationChatIds(config: AppConfig, state: EmailMonitorState): numbe
 }
 
 async function checkEmailOnce(telegram: TelegramApi, config: AppConfig): Promise<void> {
+  const t0 = Date.now();
   const state = await readState(config.emailMonitorStatePath);
   const chatIds = notificationChatIds(config, state);
-  if (chatIds.length === 0) return;
+  if (chatIds.length === 0) {
+    console.log(JSON.stringify({ msg: "email_monitor_skip", reason: "no_notify_chats" }));
+    return;
+  }
 
   const agent = await createLocalAgent(config);
   try {
     const prompt = buildEmailMonitorPrompt({
-      knownThreadIds: state.seenThreadIds,
+      threadWatermarks: state.threadWatermarks,
       lookbackHours: config.emailMonitorLookbackHours,
       defaultTimezone: config.defaultTimezone,
       defaultCalendarId: config.defaultCalendarId,
     });
     const result = await runPromptWithAgent(agent, prompt);
     if (result.status !== "finished") {
-      console.warn(`Email monitor agent ended with status ${result.status}. run=${result.runId}`);
+      console.warn(
+        JSON.stringify({
+          msg: "email_monitor_agent_not_finished",
+          status: result.status,
+          runId: result.runId,
+          chatIds: chatIds.length,
+          durationMs: Date.now() - t0,
+        }),
+      );
       return;
     }
 
-    const parsed = parseMonitorJson(result.text);
-    const nextSeen = mergeSeenThreadIds(state.seenThreadIds, parsed.seenThreadIds);
+    let parsed: ReturnType<typeof parseMonitorJson>;
+    try {
+      parsed = parseMonitorJson(result.text);
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          msg: "email_monitor_json_parse_failed",
+          error: error instanceof Error ? error.message : String(error),
+          runId: result.runId,
+          durationMs: Date.now() - t0,
+        }),
+      );
+      return;
+    }
+
+    const nextWatermarks = mergeThreadWatermarks(state.threadWatermarks, parsed.threadWatermarks);
     await writeState(config.emailMonitorStatePath, {
-      seenThreadIds: nextSeen,
+      ...state,
+      threadWatermarks: nextWatermarks,
       lastCheckedAt: new Date().toISOString(),
     });
 
@@ -97,6 +135,19 @@ async function checkEmailOnce(telegram: TelegramApi, config: AppConfig): Promise
     if (result.calendarUpdates.length > 0 && !alerts.some((alert) => /calendar|event/i.test(alert))) {
       alerts.unshift("Calendar updated from email.");
     }
+
+    console.log(
+      JSON.stringify({
+        msg: "email_monitor_cycle",
+        chatIds: chatIds.length,
+        runId: result.runId,
+        status: result.status,
+        alertCount: alerts.length,
+        watermarkCount: Object.keys(nextWatermarks).length,
+        durationMs: Date.now() - t0,
+      }),
+    );
+
     if (alerts.length === 0) return;
 
     const text = alerts.join("\n");
@@ -111,27 +162,76 @@ async function checkEmailOnce(telegram: TelegramApi, config: AppConfig): Promise
 async function readState(path: string): Promise<EmailMonitorState> {
   try {
     const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as Partial<EmailMonitorState>;
+    const parsed = JSON.parse(raw) as Partial<EmailMonitorState> & { seenThreadIds?: unknown };
+    const hasWatermarksKey = Object.prototype.hasOwnProperty.call(parsed, "threadWatermarks");
+    let threadWatermarks = normalizeWatermarks(parsed.threadWatermarks);
+    if (!hasWatermarksKey && Array.isArray(parsed.seenThreadIds) && parsed.seenThreadIds.some((x) => isString(x))) {
+      console.log(
+        JSON.stringify({
+          msg: "email_monitor_migrated_legacy_seen_thread_ids",
+          count: parsed.seenThreadIds.length,
+        }),
+      );
+      threadWatermarks = {};
+    }
+    const notificationChatIds = Array.isArray(parsed.notificationChatIds)
+      ? parsed.notificationChatIds.filter(isNumber)
+      : undefined;
     return {
-      seenThreadIds: Array.isArray(parsed.seenThreadIds) ? parsed.seenThreadIds.filter(isString) : [],
-      notificationChatIds: Array.isArray(parsed.notificationChatIds) ? parsed.notificationChatIds.filter(isNumber) : [],
+      threadWatermarks,
+      notificationChatIds,
       lastCheckedAt: parsed.lastCheckedAt,
     };
   } catch {
-    return { seenThreadIds: [] };
+    return emptyMonitorState();
   }
 }
 
 async function writeState(path: string, state: EmailMonitorState): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`);
+  const payload: EmailMonitorState = {
+    threadWatermarks: capWatermarks(state.threadWatermarks, MAX_WATERMARK_THREADS),
+    ...(state.notificationChatIds?.length ? { notificationChatIds: state.notificationChatIds } : {}),
+    ...(state.lastCheckedAt ? { lastCheckedAt: state.lastCheckedAt } : {}),
+  };
+  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
-function parseMonitorJson(text: string): { seenThreadIds: string[]; alerts: string[] } {
+function normalizeWatermarks(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== "string" || typeof v !== "string") continue;
+    const tid = k.trim();
+    const mid = v.trim();
+    if (!tid || !mid) continue;
+    out[tid] = mid;
+  }
+  return out;
+}
+
+function mergeThreadWatermarks(
+  existing: Record<string, string>,
+  incoming: Record<string, string>,
+): Record<string, string> {
+  return capWatermarks({ ...existing, ...incoming }, MAX_WATERMARK_THREADS);
+}
+
+function capWatermarks(w: Record<string, string>, max: number): Record<string, string> {
+  const keys = Object.keys(w);
+  if (keys.length <= max) return { ...w };
+  keys.sort();
+  const drop = keys.length - max;
+  const next = { ...w };
+  for (let i = 0; i < drop; i++) delete next[keys[i]];
+  return next;
+}
+
+function parseMonitorJson(text: string): { threadWatermarks: Record<string, string>; alerts: string[] } {
   const jsonText = extractJson(text);
   const parsed = JSON.parse(jsonText) as MonitorJson;
   return {
-    seenThreadIds: Array.isArray(parsed.seenThreadIds) ? parsed.seenThreadIds.filter(isString) : [],
+    threadWatermarks: normalizeWatermarks(parsed.threadWatermarks),
     alerts: Array.isArray(parsed.alerts) ? parsed.alerts.filter(isString) : [],
   };
 }
@@ -142,16 +242,6 @@ function extractJson(text: string): string {
   const match = trimmed.match(/\{[\s\S]*\}/);
   if (!match) throw new Error(`Email monitor returned non-JSON: ${trimmed.slice(0, 200)}`);
   return match[0];
-}
-
-function mergeSeenThreadIds(existing: string[], incoming: string[]): string[] {
-  const seen = new Set<string>();
-  const combined = [...incoming, ...existing].filter((id) => {
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-  return combined.slice(0, MAX_SEEN_THREADS);
 }
 
 function isString(value: unknown): value is string {

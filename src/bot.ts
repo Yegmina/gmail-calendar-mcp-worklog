@@ -4,6 +4,7 @@ import { loadConfig, isAllowedTelegramUser } from "./config.js";
 import { runPlannerExecutor } from "./agentRunner.js";
 import { appendChatTurn, getChatContext } from "./chatMemory.js";
 import { rememberNotificationChatId, startEmailMonitor } from "./emailMonitor.js";
+import { runMemoryUpdatePipeline } from "./memoryUpdate.js";
 import { downloadTelegramImage, imageCaption } from "./telegramMedia.js";
 import { transcribeTelegramVoice } from "./voice.js";
 import { chunkPlainTextForTelegram, modelOutputToTelegramHtml } from "./telegramFormat.js";
@@ -19,7 +20,7 @@ async function main(): Promise<void> {
     if (!isAllowedTelegramUser(config, ctx.from?.id)) return ctx.reply("Not allowed.");
     if (ctx.chat?.id !== undefined) void rememberNotificationChatId(config, ctx.chat.id);
     return ctx.reply(
-      "Manager4Yehor online. I can use gmail-local (Gmail/Calendar) and telegramMainFi MCP tools through a local Cursor SDK agent.",
+      "Manager4Yehor online. I can use gmail-local (Gmail/Calendar) and telegramMainFi MCP tools through a local Cursor SDK agent. Use /remember to save a fact to memory.md.",
     );
   });
 
@@ -32,6 +33,44 @@ async function main(): Promise<void> {
 
     const text = ctx.message.text.trim();
     if (!text) return;
+
+    if (/^\/remember(\s|$)/i.test(text)) {
+      const chatId = ctx.chat?.id;
+      if (chatId === undefined) {
+        await ctx.reply("No chat id found.");
+        return;
+      }
+      const rest = text.replace(/^\/remember(@[A-Za-z0-9_]+)?/i, "").trim();
+      if (!rest) {
+        await ctx.reply("Usage: /remember <fact or preference to store>");
+        return;
+      }
+      appendChatTurn(chatId, "user", `/remember ${rest}`);
+      await rememberNotificationChatId(config, chatId);
+      await ctx.sendChatAction("typing");
+      const status = await ctx.reply("Saving to memory…");
+      try {
+        await runMemoryUpdatePipeline(config, {
+          userText: rest,
+          assistantText: "",
+          chatContext: getChatContext(chatId),
+          rememberOnly: true,
+        });
+        await ctx.telegram.deleteMessage(chatId, status.message_id).catch(() => undefined);
+        await ctx.reply("Memory update finished (check data/memory.md on the host).");
+        appendChatTurn(chatId, "assistant", "(memory update run)");
+      } catch (error) {
+        await ctx.telegram
+          .editMessageText(
+            chatId,
+            status.message_id,
+            undefined,
+            `Memory error: ${error instanceof Error ? error.message : String(error)}`,
+          )
+          .catch(() => undefined);
+      }
+      return;
+    }
 
     await handleUserRequest(ctx, text);
   });
@@ -134,6 +173,12 @@ async function main(): Promise<void> {
       appendChatTurn(chatId, "assistant", reply);
       await ctx.telegram.deleteMessage(chatId, status.message_id).catch(() => undefined);
       await sendLongReply(ctx, reply);
+      void runMemoryUpdatePipeline(config, {
+        userText: text,
+        assistantText: reply,
+        chatContext: getChatContext(chatId),
+        rememberOnly: false,
+      }).catch((err) => console.warn("memory_update background:", err));
     } catch (error) {
       await ctx.telegram.deleteMessage(chatId, status.message_id).catch(() => undefined);
       await ctx.reply(`Bot error: ${error instanceof Error ? error.message : String(error)}`);

@@ -1,5 +1,6 @@
 import { Agent, Cursor, CursorAgentError, type ModelSelection, type SDKAgent, type SDKImage, type SDKMessage } from "@cursor/sdk";
 import type { AppConfig } from "./config.js";
+import { readSoulAndMemory } from "./contextFiles.js";
 import { buildMcpServers } from "./mcpServers.js";
 import { buildExecutorPrompt, buildPlannerPrompt } from "./prompts.js";
 import type { PromptContext } from "./prompts.js";
@@ -74,10 +75,13 @@ export async function runPlannerExecutor(config: AppConfig, userText: string, ch
   let agent: SDKAgent | undefined;
   try {
     agent = await createLocalAgent(config);
+    const { soul, memory } = await readSoulAndMemory(config.repoRoot);
     const promptContext: PromptContext = {
       chatContext,
       defaultTimezone: config.defaultTimezone,
       defaultCalendarId: config.defaultCalendarId,
+      soulMarkdown: soul,
+      memoryMarkdown: memory,
     };
     const planner = await runPromptWithAgent(agent, buildPlannerPrompt(userText, promptContext), images);
     if (planner.status !== "finished") {

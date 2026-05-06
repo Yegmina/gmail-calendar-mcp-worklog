@@ -20,7 +20,9 @@ __pycache__/
 # Node / SDK bot
 node_modules/
 dist/
-data/
+data/*
+!data/soul.example.md
+!data/memory.example.md
 .env
 .env.*
 !.env.example

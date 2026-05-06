@@ -21,6 +21,7 @@ RUN npm ci \
 COPY tsconfig.json ./
 COPY src ./src
 COPY docs ./docs
+COPY data ./data
 
 ENV NODE_ENV=production
 ENV GMAIL_MCP_PYTHON=/opt/gmail-venv/bin/python

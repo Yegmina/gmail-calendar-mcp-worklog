@@ -16,6 +16,7 @@ export type AppConfig = {
   emailMonitorIntervalMinutes: number;
   emailMonitorLookbackHours: number;
   emailMonitorStatePath: string;
+  memoryAgentUpdatesEnabled: boolean;
   repoRoot: string;
   gmailMcpPython: string;
   gmailMcpServerScript: string;
@@ -85,6 +86,7 @@ export function loadConfig(options: { requireBotToken?: boolean } = {}): AppConf
     emailMonitorIntervalMinutes: parseInteger("EMAIL_MONITOR_INTERVAL_MINUTES", 60, 1),
     emailMonitorLookbackHours: parseInteger("EMAIL_MONITOR_LOOKBACK_HOURS", 2, 1),
     emailMonitorStatePath: resolve(env("EMAIL_MONITOR_STATE_PATH") ?? `${repoRoot}/data/email-monitor-state.json`),
+    memoryAgentUpdatesEnabled: parseBoolean("MEMORY_AGENT_UPDATES", true),
     repoRoot,
     gmailMcpPython: env("GMAIL_MCP_PYTHON") ?? "/root/.cursor/gmail-venv/bin/python",
     gmailMcpServerScript: env("GMAIL_MCP_SERVER_SCRIPT") ?? "/root/.cursor/scripts/gmail_mcp_stdio_server.py",

@@ -2,7 +2,19 @@ export type PromptContext = {
   chatContext?: string;
   defaultTimezone: string;
   defaultCalendarId: string;
+  soulMarkdown?: string;
+  memoryMarkdown?: string;
 };
+
+function persistentContextBlock(context: PromptContext): string {
+  const soul = (context.soulMarkdown ?? "").trim() || "(none)";
+  const memory = (context.memoryMarkdown ?? "").trim() || "(none)";
+  return `Long-term context (soul — identity and stable preferences):
+${soul}
+
+Rolling memory (facts and preferences to honor):
+${memory}`;
+}
 
 export function buildPlannerPrompt(userText: string, context: PromptContext): string {
   return `You are the planner for Yehor's personal assistant bot.
@@ -39,6 +51,8 @@ Tools:
 Risk:
 Need user clarification:
 
+${persistentContextBlock(context)}
+
 Recent chat context:
 ${context.chatContext ?? "(no previous turns)"}
 
@@ -73,6 +87,8 @@ Hard rules:
 Planner output:
 ${planText}
 
+${persistentContextBlock(context)}
+
 Recent chat context:
 ${context.chatContext ?? "(no previous turns)"}
 
@@ -81,24 +97,33 @@ ${userText}`;
 }
 
 export function buildEmailMonitorPrompt(options: {
-  knownThreadIds: string[];
+  threadWatermarks: Record<string, string>;
   lookbackHours: number;
   defaultTimezone: string;
   defaultCalendarId: string;
 }): string {
+  const wmLines = Object.entries(options.threadWatermarks);
+  const wmText =
+    wmLines.length > 0
+      ? wmLines.map(([tid, mid]) => `${tid}\t${mid}`).join("\n")
+      : "(none — first run or reset)";
+
   return `You are an hourly email monitor for Yehor.
 
 Use gmail-local only, plus calendar tools only when adding a clear event registration by Yehor.
 
 Task:
 1. Search Gmail for recent threads using query "newer_than:${options.lookbackHours}h" and page_size 20.
-2. Ignore any thread id already in Known thread ids.
-3. For each new thread, get_thread and classify:
+2. For each thread in the search results: call get_thread. Take the **newest** message in that thread (last message block in get_thread output). Let latestId be its message_id= value.
+3. Compare latestId to Known thread watermarks for that thread id:
+   - If Known watermark for this thread equals latestId, skip classification for this thread (no alert). Still include this thread id mapping in JSON threadWatermarks output unchanged.
+   - Otherwise classify the thread (new mail since last run) and then set the watermark for this thread to latestId.
+4. For each thread that needs classification, use get_thread content and classify:
    - spam/promotional/noise: no alert.
    - event registration made by Yehor (confirmation/ticket/webinar/hackathon/course registration): if title/date/time are clear, list calendar events for the same day/time window first; create one event only if no same/similar title overlaps. Alert shortly whether calendar was updated or already existed.
    - event invite not obviously made by Yehor: do not create a calendar event. Alert and ask if he wants to attend/add it.
    - important email (school, deadlines, money, travel, account/security, jobs, urgent personal): alert shortly.
-4. Keep alerts extremely short. Max 1 line per email.
+5. Keep alerts extremely short. Max 1 line per email.
 
 Rules:
 - Default calendar: ${options.defaultCalendarId}. Default timezone: ${options.defaultTimezone}.
@@ -108,12 +133,51 @@ Rules:
 - Do not alert for spam, newsletters, ads, receipts with no action, social notifications, or low-value automated mail.
 - Return ONLY valid compact JSON, no markdown:
 {
-  "seenThreadIds": ["thread ids you inspected, including ignored ones"],
+  "threadWatermarks": { "threadId": "latestMessageId", ... every thread you opened from search, merged with updated latest message ids },
   "alerts": ["short Telegram-ready alert lines"]
 }
 
-Known thread ids:
-${options.knownThreadIds.length ? options.knownThreadIds.join("\n") : "(none)"}`;
+Known thread watermarks (threadId -> last processed message_id):
+${wmText}`;
+}
+
+export function buildMemoryUpdatePrompt(options: {
+  userText: string;
+  assistantText: string;
+  chatContext: string;
+  currentSoul: string;
+  currentMemory: string;
+  rememberOnly: boolean;
+}): string {
+  const asst = options.rememberOnly ? "(n/a — user invoked /remember only)" : options.assistantText;
+
+  return `You maintain two local markdown files for Yehor's Telegram assistant: soul (stable preferences) and memory (rolling facts).
+
+Do not call tools. Do not use MCP. Reply with ONLY valid JSON.
+
+Current soul file:
+${options.currentSoul}
+
+Current memory file:
+${options.currentMemory}
+
+Recent chat context:
+${options.chatContext}
+
+Latest user message:
+${options.userText}
+
+Latest assistant reply:
+${asst}
+
+Extract only durable preferences or facts worth keeping (timezone habits, names, standing instructions, recurring context). Omit ephemeral chat. If nothing qualifies, return empty arrays.
+
+Rules:
+- memory_append: 0-${options.rememberOnly ? 8 : 6} short bullet strings; each <= 400 chars; no secrets/tokens.
+- soul_append: 0-${options.rememberOnly ? 0 : 3} bullet strings; only for long-lived identity/preferences; each <= 320 chars; use sparingly. If rememberOnly is true, soul_append must be [].
+
+Return shape:
+{"memory_append":[],"soul_append":[]}`;
 }
 
 export const MCP_HEALTH_PROMPT = `Run a safe MCP health check. Do not edit files or change state.
