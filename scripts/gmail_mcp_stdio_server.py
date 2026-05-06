@@ -15,6 +15,7 @@ Does not touch studyshortspayservice.
 """
 from __future__ import annotations
 
+import base64
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,6 +47,70 @@ def _calendar():
 def _parse_iso(dt: str) -> datetime:
     s = dt.strip().replace("Z", "+00:00")
     return datetime.fromisoformat(s)
+
+
+def _b64url_decode(data: str) -> str:
+    if not data:
+        return ""
+    padded = data + "=" * (-len(data) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded)
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _iter_payload_parts(payload: dict | None) -> list[dict]:
+    if not payload:
+        return []
+    nested = payload.get("parts")
+    if nested:
+        out: list[dict] = []
+        for p in nested:
+            out.extend(_iter_payload_parts(p))
+        return out
+    return [payload]
+
+
+def _split_plain_and_html_from_parts(parts: list[dict]) -> tuple[list[str], list[str]]:
+    plain_chunks: list[str] = []
+    html_chunks: list[str] = []
+    for part in parts:
+        mime = (part.get("mimeType") or "").lower()
+        body = part.get("body") or {}
+        bdata = body.get("data")
+        if not bdata:
+            continue
+        text = _b64url_decode(str(bdata))
+        if mime == "text/plain":
+            plain_chunks.append(text)
+        elif mime == "text/html":
+            html_chunks.append(text)
+    return plain_chunks, html_chunks
+
+
+def _format_attachment_lines(parts: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for part in parts:
+        body = part.get("body") or {}
+        att_id = body.get("attachmentId")
+        if not att_id:
+            continue
+        fname = part.get("filename") or "(no filename)"
+        mime = part.get("mimeType") or "?"
+        size = body.get("size") if body.get("size") is not None else "?"
+        lines.append(f"  - {fname}\tmime={mime}\tsize={size}\tattachmentId={att_id}")
+    return lines
+
+
+def _clamp_max_body_chars(n: int) -> int:
+    return max(4_096, min(int(n), 400_000))
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n… [truncated]"
 
 
 @mcp.tool()
@@ -115,6 +180,53 @@ def get_thread(thread_id: str) -> str:
             snip = msg.get("snippet") or ""
             parts.append(f"message_id={hid}\n  From: {frm}\n  Subject: {subj}\n  Snippet: {snip[:500]}")
         return "\n\n".join(parts) if parts else "(empty thread)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def get_message_body(message_id: str, max_body_chars: int = 150_000) -> str:
+    """Fetch one Gmail message by id: headers, decoded body (text/plain preferred, else text/html), and attachment metadata (no file bytes). Use message_id from get_thread."""
+    try:
+        mid = message_id.strip()
+        if not mid:
+            return "Error: message_id required"
+        limit = _clamp_max_body_chars(max_body_chars)
+        svc = _gmail()
+        msg = svc.users().messages().get(userId="me", id=mid, format="full").execute()
+        payload = msg.get("payload") or {}
+        header_list = payload.get("headers") or []
+        hdr = {h["name"]: h["value"] for h in header_list if isinstance(h, dict) and "name" in h}
+        parts = _iter_payload_parts(payload)
+        plain_chunks, html_chunks = _split_plain_and_html_from_parts(parts)
+        plain = "\n\n".join(plain_chunks).strip()
+        html = "\n\n".join(html_chunks).strip()
+
+        if plain:
+            body_text = plain
+        elif html:
+            body_text = "(Only HTML body available; raw tags follow.)\n\n" + html
+        else:
+            snippet = (msg.get("snippet") or "").strip()
+            body_text = "(no text/plain or text/html body decoded)\nSnippet: " + (snippet or "(empty)")
+
+        body_out = _truncate_text(body_text, limit)
+
+        head_lines = [f"message_id={mid}"]
+        for key in ("Subject", "From", "To", "Cc", "Date"):
+            if key in hdr:
+                head_lines.append(f"{key}: {hdr[key]}")
+
+        att = _format_attachment_lines(parts)
+        att_block = "\n".join(att) if att else "  (none)"
+
+        return (
+            "\n".join(head_lines)
+            + "\n\n--- Body ---\n"
+            + body_out
+            + "\n\n--- Attachments ---\n"
+            + att_block
+        )
     except Exception as e:
         return f"Error: {e}"
 

@@ -67,7 +67,7 @@ Chronological record of design decisions, failures, and fixes while wiring **per
 
 Implemented in `scripts/gmail_mcp_stdio_server.py` (FastMCP):
 
-**Gmail (read):** `list_labels`, `search_threads`, `get_thread`  
+**Gmail (read):** `list_labels`, `search_threads`, `get_thread`, `get_message_body` (full decoded body + attachment metadata)  
 **Calendar (read/write):** `list_calendars`, `list_events`, `create_event`, `delete_event`
 
 **Note:** Gmail **write** (e.g. drafts) is not exposed as MCP tools yet; it was validated with `scripts/gmail_mcp_rw_selftest.py` using the same token.

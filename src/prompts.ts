@@ -22,7 +22,7 @@ export function buildPlannerPrompt(userText: string, context: PromptContext): st
 Create a terse plan for the user's request. Do not execute tools in this planner step unless a tool call is required only to disambiguate the request.
 
 Available capabilities for the executor:
-- gmail-local MCP: list_labels, search_threads, get_thread, list_calendars, list_events, create_event, delete_event.
+- gmail-local MCP: list_labels, search_threads, get_thread, get_message_body (full decoded body + attachment metadata; use message_id from get_thread), list_calendars, list_events, create_event, delete_event.
 - telegramMainFi MCP: tg_me, tg_dialogs, tg_dialog, tg_save_draft, tg_send, tg_read.
 
 Safety policy:
@@ -74,6 +74,7 @@ Hard rules:
 - telegramMainFi.tg_send is allowed only for explicit send-message requests with a clear target dialog and message.
 - If intent is unclear, ask a short clarification instead of acting.
 - Gmail write/send/destructive actions are not available in the MCP and must not be attempted.
+- For the **full body** of a specific email (not just the snippet from get_thread), call **get_message_body** with that message's id.
 - Do not include OAuth tokens, API keys, or secrets in output.
 - Use recent chat context to complete follow-up instructions. If a previous user message gave date/time/duration and the latest says to create it, create it.
 - Default calendar: ${context.defaultCalendarId}. Default timezone: ${context.defaultTimezone}.
@@ -118,7 +119,7 @@ Task:
 3. Compare latestId to Known thread watermarks for that thread id:
    - If Known watermark for this thread equals latestId, skip classification for this thread (no alert). Still include this thread id mapping in JSON threadWatermarks output unchanged.
    - Otherwise classify the thread (new mail since last run) and then set the watermark for this thread to latestId.
-4. For each thread that needs classification, use get_thread content and classify:
+4. For each thread that needs classification, use get_thread content (and get_message_body on the newest message if the snippet is insufficient) and classify:
    - spam/promotional/noise: no alert.
    - event registration made by Yehor (confirmation/ticket/webinar/hackathon/course registration): if title/date/time are clear, list calendar events for the same day/time window first; create one event only if no same/similar title overlaps. Alert shortly whether calendar was updated or already existed.
    - event invite not obviously made by Yehor: do not create a calendar event. Alert and ask if he wants to attend/add it.
@@ -184,8 +185,9 @@ export const MCP_HEALTH_PROMPT = `Run a safe MCP health check. Do not edit files
 
 Use these MCP tools:
 1. gmail-local list_calendars with max_results 5.
-2. gmail-local search_threads with empty query and page_size 2.
-3. telegramMainFi tg_me.
-4. telegramMainFi tg_dialogs with only_unread true.
+2. gmail-local search_threads with empty query and page_size 1.
+3. If step 2 returned a thread id, gmail-local get_thread with that id; then gmail-local get_message_body with the newest message_id from that output (last message_id= line), max_body_chars 8000.
+4. telegramMainFi tg_me.
+5. telegramMainFi tg_dialogs with only_unread true.
 
-Return a compact status report with OK/FAIL for Gmail, Calendar, and Telegram.`;
+Return a compact status report with OK/FAIL for Gmail, Calendar (read), full message body, and Telegram.`;

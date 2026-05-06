@@ -63,10 +63,12 @@ After a normal reply, if `MEMORY_AGENT_UPDATES=true`, an async pass may update `
 
 ## MCP Health Test
 
-`npm run mcp:health` asks the SDK agent to call:
+`npm run mcp:health` asks the SDK agent to call (among others):
 
 - `gmail-local.list_calendars`
 - `gmail-local.search_threads`
+- `gmail-local.get_thread` (when a thread exists)
+- `gmail-local.get_message_body` (smoke test with a small `max_body_chars`)
 - `telegramMainFi.tg_me`
 - `telegramMainFi.tg_dialogs`
 

@@ -103,4 +103,4 @@ fi
 
 echo
 echo "Next: Settings → MCP → gmail-local on → Reload Window."
-echo "MCP tools include list_calendars, list_events, create_event, delete_event."
+echo "MCP tools include list_labels, search_threads, get_thread, get_message_body, list_calendars, list_events, create_event, delete_event."
