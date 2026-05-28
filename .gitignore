@@ -20,6 +20,7 @@ __pycache__/
 # Node / SDK bot
 node_modules/
 dist/
+.playwright-cli/
 data/*
 !data/soul.example.md
 !data/memory.example.md

@@ -3,6 +3,7 @@ import type { Context } from "telegraf";
 import { loadConfig, isAllowedTelegramUser } from "./config.js";
 import { runPlannerExecutor } from "./agentRunner.js";
 import { appendChatTurn, getChatContext } from "./chatMemory.js";
+import { isDirectEmailCheck, listRecentEmails, requestedEmailCount } from "./directGmail.js";
 import { rememberNotificationChatId, startEmailMonitor } from "./emailMonitor.js";
 import { runMemoryUpdatePipeline } from "./memoryUpdate.js";
 import { downloadTelegramImage, imageCaption } from "./telegramMedia.js";
@@ -169,6 +170,14 @@ async function main(): Promise<void> {
     await ctx.sendChatAction("typing");
     const status = await ctx.reply("Working...");
     try {
+      if (!images?.length && isDirectEmailCheck(text)) {
+        const reply = await listRecentEmails(config, requestedEmailCount(text));
+        appendChatTurn(chatId, "assistant", reply);
+        await ctx.telegram.deleteMessage(chatId, status.message_id).catch(() => undefined);
+        await sendLongReply(ctx, reply);
+        return;
+      }
+
       const reply = await runPlannerExecutor(config, text, getChatContext(chatId), images);
       appendChatTurn(chatId, "assistant", reply);
       await ctx.telegram.deleteMessage(chatId, status.message_id).catch(() => undefined);
