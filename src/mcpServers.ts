@@ -12,6 +12,9 @@ export function buildMcpServers(config: AppConfig): Record<string, McpServerConf
       type: "stdio",
       command: config.gmailMcpPython,
       args: [config.gmailMcpServerScript],
+      env: {
+        GMAIL_MCP_HOME: config.gmailMcpHome,
+      },
     },
     telegramMainFi: {
       type: "stdio",

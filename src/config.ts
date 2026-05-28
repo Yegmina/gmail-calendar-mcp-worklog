@@ -5,8 +5,13 @@ import { resolve } from "node:path";
 export type AppConfig = {
   cursorApiKey: string;
   requestedModelId: string;
+  agentRunner: "auto" | "openai" | "cursor";
+  cursorRunner: "auto" | "sdk" | "cli";
+  cursorCliBinary: string;
+  cursorCliModel: string;
   botToken?: string;
   openAiApiKey?: string;
+  openAiAgentModel?: string;
   voiceTranscriptionModel: string;
   defaultTimezone: string;
   defaultCalendarId: string;
@@ -18,6 +23,7 @@ export type AppConfig = {
   emailMonitorStatePath: string;
   memoryAgentUpdatesEnabled: boolean;
   repoRoot: string;
+  gmailMcpHome: string;
   gmailMcpPython: string;
   gmailMcpServerScript: string;
   telegramNode: string;
@@ -70,13 +76,30 @@ function parseBoolean(name: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 }
 
+function parseRunner(raw: string | undefined): AppConfig["cursorRunner"] {
+  if (!raw) return "auto";
+  if (raw === "auto" || raw === "sdk" || raw === "cli") return raw;
+  throw new Error("CURSOR_RUNNER must be one of: auto, sdk, cli");
+}
+
+function parseAgentRunner(raw: string | undefined): AppConfig["agentRunner"] {
+  if (!raw) return "auto";
+  if (raw === "auto" || raw === "openai" || raw === "cursor") return raw;
+  throw new Error("AGENT_RUNNER must be one of: auto, openai, cursor");
+}
+
 export function loadConfig(options: { requireBotToken?: boolean } = {}): AppConfig {
   const repoRoot = resolve(env("BOT_WORKDIR") ?? process.cwd());
   const config: AppConfig = {
     cursorApiKey: requireEnv("CURSOR_API_KEY"),
-    requestedModelId: env("CURSOR_MODEL_ID") ?? "composer-2-fast",
+    requestedModelId: env("CURSOR_MODEL_ID") ?? "composer-2",
+    agentRunner: parseAgentRunner(env("AGENT_RUNNER")),
+    cursorRunner: parseRunner(env("CURSOR_RUNNER")),
+    cursorCliBinary: env("CURSOR_CLI_BINARY") ?? "/root/.local/bin/agent",
+    cursorCliModel: env("CURSOR_CLI_MODEL") ?? "auto",
     botToken: env("MANAGER4YEHOR_BOT_TOKEN"),
     openAiApiKey: env("OPENAI_API_KEY"),
+    openAiAgentModel: env("OPENAI_AGENT_MODEL"),
     voiceTranscriptionModel: env("VOICE_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe",
     defaultTimezone: env("DEFAULT_TIMEZONE") ?? "Europe/Helsinki",
     defaultCalendarId: env("DEFAULT_CALENDAR_ID") ?? "primary",
@@ -88,6 +111,7 @@ export function loadConfig(options: { requireBotToken?: boolean } = {}): AppConf
     emailMonitorStatePath: resolve(env("EMAIL_MONITOR_STATE_PATH") ?? `${repoRoot}/data/email-monitor-state.json`),
     memoryAgentUpdatesEnabled: parseBoolean("MEMORY_AGENT_UPDATES", true),
     repoRoot,
+    gmailMcpHome: env("GMAIL_MCP_HOME") ?? "/root/.cursor/secrets",
     gmailMcpPython: env("GMAIL_MCP_PYTHON") ?? "/root/.cursor/gmail-venv/bin/python",
     gmailMcpServerScript: env("GMAIL_MCP_SERVER_SCRIPT") ?? "/root/.cursor/scripts/gmail_mcp_stdio_server.py",
     telegramNode: env("TELEGRAM_NODE") ?? "/usr/bin/node",
@@ -101,10 +125,12 @@ export function loadConfig(options: { requireBotToken?: boolean } = {}): AppConf
     throw new Error("Missing required environment variable: MANAGER4YEHOR_BOT_TOKEN");
   }
 
+  assertPathExists(config.gmailMcpHome, "GMAIL_MCP_HOME");
   assertPathExists(config.gmailMcpPython, "GMAIL_MCP_PYTHON");
   assertPathExists(config.gmailMcpServerScript, "GMAIL_MCP_SERVER_SCRIPT");
   assertPathExists(config.telegramNode, "TELEGRAM_NODE");
   assertPathExists(config.telegramMcpScript, "TELEGRAM_MCP_SCRIPT");
+  if (config.cursorRunner !== "sdk") assertPathExists(config.cursorCliBinary, "CURSOR_CLI_BINARY");
 
   return config;
 }

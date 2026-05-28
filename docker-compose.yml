@@ -9,7 +9,9 @@ services:
       - .env
     environment:
       BOT_WORKDIR: /app
+      AGENT_RUNNER: auto
       EMAIL_MONITOR_STATE_PATH: /app/data/email-monitor-state.json
+      GMAIL_MCP_HOME: /root/.cursor/secrets
       GMAIL_MCP_PYTHON: /opt/gmail-venv/bin/python
       GMAIL_MCP_SERVER_SCRIPT: /root/.cursor/scripts/gmail_mcp_stdio_server.py
       TELEGRAM_NODE: /usr/local/bin/node
@@ -18,6 +20,7 @@ services:
     volumes:
       - bot-data:/app/data
       - /root/.cursor:/root/.cursor
+      - /root/.local:/root/.local
       - /root/.telegram-mcp:/root/.telegram-mcp
 
 volumes:

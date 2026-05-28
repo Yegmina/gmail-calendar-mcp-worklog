@@ -26,18 +26,22 @@ Required:
 
 Optional:
 
-- `CURSOR_MODEL_ID` (defaults to `composer-2-fast`)
+- `AGENT_RUNNER` (`auto`, `openai`, or `cursor`; default `auto` uses OpenAI Agents SDK first when `OPENAI_API_KEY` is set, then Cursor fallback)
+- `OPENAI_AGENT_MODEL` (optional model override for the OpenAI Agents SDK runner; otherwise the SDK default is used)
+- `CURSOR_MODEL_ID` (defaults to `composer-2`)
+- `CURSOR_RUNNER` (`auto`, `sdk`, or `cli`; use `cli` on free Cursor plans where the SDK returns `plan_required`)
+- `CURSOR_CLI_BINARY` and `CURSOR_CLI_MODEL` for the local Cursor Agent fallback (defaults: `/root/.local/bin/agent`, `auto`)
 - `ALLOWED_TELEGRAM_USER_IDS` (comma-separated; empty allows all)
 - `OPENAI_API_KEY` and `VOICE_TRANSCRIPTION_MODEL` for voice transcription
 - `DEFAULT_TIMEZONE` (defaults to `Europe/Helsinki`)
 - `DEFAULT_CALENDAR_ID` (defaults to `primary`)
 - `EMAIL_MONITOR_ENABLED`, `EMAIL_MONITOR_INTERVAL_MINUTES`, `EMAIL_MONITOR_LOOKBACK_HOURS`, `TELEGRAM_NOTIFY_CHAT_IDS`, `EMAIL_MONITOR_STATE_PATH` (see **Email monitor** below)
 - `MEMORY_AGENT_UPDATES` (default `true`) — after each reply, a small agent pass may append `data/soul.md` and `data/memory.md`
-- path overrides for the Gmail and Telegram MCP scripts
+- path overrides for the Gmail token directory and Telegram/Gmail MCP scripts
 
 ## Email monitor (proactive Gmail)
 
-The bot starts a timer (first run **~30s** after start, then every `EMAIL_MONITOR_INTERVAL_MINUTES`, default **60**) that runs a **local Cursor SDK** agent with the same `gmail-local` MCP. It searches `newer_than:Nh` (`EMAIL_MONITOR_LOOKBACK_HOURS`, default **2**), classifies threads, may create calendar events for clear self-registrations, and sends short alerts to Telegram.
+The bot starts a timer (first run **~30s** after start, then every `EMAIL_MONITOR_INTERVAL_MINUTES`, default **60**) that runs the configured agent runner with the same `gmail-local` MCP. It searches `newer_than:Nh` (`EMAIL_MONITOR_LOOKBACK_HOURS`, default **2**), classifies threads, may create calendar events for clear self-registrations, and sends short alerts to Telegram.
 
 **Watermarks:** State file stores `threadWatermarks` (Gmail thread id → last processed **message** id) so **new mail in an existing thread** can alert again. Legacy state files that only had `seenThreadIds` are migrated once (watermarks cleared so threads are re-evaluated).
 
@@ -116,6 +120,7 @@ Mounted host paths:
 The compose file overrides:
 
 - `GMAIL_MCP_PYTHON=/opt/gmail-venv/bin/python`
+- `GMAIL_MCP_HOME=/root/.cursor/secrets`
 - `TELEGRAM_NODE=/usr/local/bin/node`
 
 This avoids depending on the host Python venv inside the container.

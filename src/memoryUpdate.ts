@@ -1,6 +1,6 @@
 import type { AppConfig } from "./config.js";
 import { appendToMemoryFile, memoryPath, readSoulAndMemory, soulPath, writeSoulFile } from "./contextFiles.js";
-import { createLocalAgent, runPromptWithAgent } from "./agentRunner.js";
+import { runPrompt } from "./agentRunner.js";
 import { buildMemoryUpdatePrompt } from "./prompts.js";
 
 const MAX_MEMORY_BULLETS = 8;
@@ -55,9 +55,8 @@ export async function runMemoryUpdatePipeline(config: AppConfig, input: MemoryUp
     rememberOnly: input.rememberOnly ?? false,
   });
 
-  const agent = await createLocalAgent(config);
   try {
-    const result = await runPromptWithAgent(agent, prompt);
+    const result = await runPrompt(config, prompt);
     if (result.status !== "finished") {
       console.warn(`memory_update agent status=${result.status} run=${result.runId}`);
       return;
@@ -94,7 +93,7 @@ export async function runMemoryUpdatePipeline(config: AppConfig, input: MemoryUp
         }),
       );
     }
-  } finally {
-    await agent[Symbol.asyncDispose]();
+  } catch (error) {
+    console.warn("memory_update failed", error);
   }
 }

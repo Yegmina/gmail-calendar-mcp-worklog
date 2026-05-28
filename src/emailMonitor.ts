@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Telegraf } from "telegraf";
 import type { AppConfig } from "./config.js";
-import { createLocalAgent, runPromptWithAgent } from "./agentRunner.js";
+import { runPrompt } from "./agentRunner.js";
 import { buildEmailMonitorPrompt } from "./prompts.js";
 import { chunkPlainTextForTelegram, modelOutputToTelegramHtml } from "./telegramFormat.js";
 
@@ -87,76 +87,80 @@ async function checkEmailOnce(telegram: TelegramApi, config: AppConfig): Promise
     return;
   }
 
-  const agent = await createLocalAgent(config);
-  try {
-    const prompt = buildEmailMonitorPrompt({
-      threadWatermarks: state.threadWatermarks,
-      lookbackHours: config.emailMonitorLookbackHours,
-      defaultTimezone: config.defaultTimezone,
-      defaultCalendarId: config.defaultCalendarId,
-    });
-    const result = await runPromptWithAgent(agent, prompt);
-    if (result.status !== "finished") {
-      console.warn(
-        JSON.stringify({
-          msg: "email_monitor_agent_not_finished",
-          status: result.status,
-          runId: result.runId,
-          chatIds: chatIds.length,
-          durationMs: Date.now() - t0,
-        }),
-      );
-      return;
-    }
-
-    let parsed: ReturnType<typeof parseMonitorJson>;
-    try {
-      parsed = parseMonitorJson(result.text);
-    } catch (error) {
-      console.warn(
-        JSON.stringify({
-          msg: "email_monitor_json_parse_failed",
-          error: error instanceof Error ? error.message : String(error),
-          runId: result.runId,
-          durationMs: Date.now() - t0,
-        }),
-      );
-      return;
-    }
-
-    const nextWatermarks = mergeThreadWatermarks(state.threadWatermarks, parsed.threadWatermarks);
-    await writeState(config.emailMonitorStatePath, {
-      ...state,
-      threadWatermarks: nextWatermarks,
-      lastCheckedAt: new Date().toISOString(),
-    });
-
-    const alerts = parsed.alerts.map((alert) => alert.trim()).filter(Boolean);
-    if (result.calendarUpdates.length > 0 && !alerts.some((alert) => /calendar|event/i.test(alert))) {
-      alerts.unshift("Calendar updated from email.");
-    }
-
-    console.log(
+  const prompt = buildEmailMonitorPrompt({
+    threadWatermarks: state.threadWatermarks,
+    lookbackHours: config.emailMonitorLookbackHours,
+    defaultTimezone: config.defaultTimezone,
+    defaultCalendarId: config.defaultCalendarId,
+  });
+  const result = await runPrompt(config, prompt);
+  if (result.status !== "finished") {
+    console.warn(
       JSON.stringify({
-        msg: "email_monitor_cycle",
-        chatIds: chatIds.length,
-        runId: result.runId,
+        msg: "email_monitor_agent_not_finished",
         status: result.status,
-        alertCount: alerts.length,
-        watermarkCount: Object.keys(nextWatermarks).length,
+        runId: result.runId,
+        chatIds: chatIds.length,
+        durationMs: Date.now() - t0,
+        detail: result.text.slice(0, 500),
+      }),
+    );
+    return;
+  }
+
+  let parsed: ReturnType<typeof parseMonitorJson>;
+  try {
+    parsed = parseMonitorJson(result.text);
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        msg: "email_monitor_json_parse_failed",
+        error: error instanceof Error ? error.message : String(error),
+        runId: result.runId,
         durationMs: Date.now() - t0,
       }),
     );
-
-    if (alerts.length === 0) return;
-
-    const text = alerts.join("\n");
-    for (const chatId of chatIds) {
-      await sendTelegramHtml(telegram, chatId, text);
-    }
-  } finally {
-    await agent[Symbol.asyncDispose]();
+    return;
   }
+
+  const nextWatermarks = mergeThreadWatermarks(state.threadWatermarks, parsed.threadWatermarks);
+  await writeState(config.emailMonitorStatePath, {
+    ...state,
+    threadWatermarks: nextWatermarks,
+    lastCheckedAt: new Date().toISOString(),
+  });
+
+  const alerts = parsed.alerts
+    .map((alert) => alert.trim())
+    .filter(Boolean)
+    .filter((alert) => !isAuthFailureAlert(alert));
+  if (result.calendarUpdates.length > 0 && !alerts.some((alert) => /calendar|event/i.test(alert))) {
+    alerts.unshift("Calendar updated from email.");
+  }
+
+  console.log(
+    JSON.stringify({
+      msg: "email_monitor_cycle",
+      chatIds: chatIds.length,
+      runId: result.runId,
+      status: result.status,
+      alertCount: alerts.length,
+      watermarkCount: Object.keys(nextWatermarks).length,
+      durationMs: Date.now() - t0,
+    }),
+  );
+
+  if (alerts.length === 0) return;
+
+  const text = alerts.join("\n");
+  for (const chatId of chatIds) {
+    await sendTelegramHtml(telegram, chatId, text);
+  }
+}
+
+function isAuthFailureAlert(alert: string): boolean {
+  return /\b(gmail|calendar|tasks?|gmail-local)\b/i.test(alert)
+    && /\b(unauthori[sz]ed|authori[sz]ation|reauthori[sz]e|reconnect|access failed|can't access|cannot access|missing)\b/i.test(alert);
 }
 
 async function readState(path: string): Promise<EmailMonitorState> {
