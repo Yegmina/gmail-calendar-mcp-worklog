@@ -11,15 +11,16 @@ type RecentEmail = {
 };
 
 export function isDirectEmailCheck(text: string): boolean {
+  if (needsAgentEmailReasoning(text)) return false;
   const asksForMail = /\b(email|emails|gmail|inbox|mail)\b/i.test(text);
   const asksForRecent = /\b(check|show|list|read)\b/i.test(text) && /\b(latest|recent|newest)\b/i.test(text);
   return (/\b(check|show|list|read)\b/i.test(text) && asksForMail) || asksForRecent;
 }
 
 export function requestedEmailCount(text: string, fallback = 5): number {
-  const match = text.match(/\b([1-9][0-9]?)\b/);
+  const match = text.match(/\b(100|[1-9][0-9]?)\b/);
   if (!match) return fallback;
-  return Math.min(Number(match[1]), 50);
+  return Math.min(Number(match[1]), 100);
 }
 
 export async function listRecentEmails(config: AppConfig, max = 5): Promise<string> {
@@ -60,4 +61,8 @@ function parseRecentEmails(output: string): RecentEmail[] {
 
   if (from || subject) emails.push({ from: from || "?", subject: subject || "(no subject)" });
   return emails;
+}
+
+function needsAgentEmailReasoning(text: string): boolean {
+  return /\b(event|events|calendar|upcoming|add|adding|invite|invitation|registration|deadline|summari[sz]e|think|analy[sz]e|decide|important|action)\b/i.test(text);
 }

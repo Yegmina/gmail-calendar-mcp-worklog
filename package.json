@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "tsx watch src/bot.ts",
     "start": "tsx src/bot.ts",
-    "mcp:health": "tsx src/mcpHealth.ts"
+    "mcp:health": "tsx src/mcpHealth.ts",
+    "test": "tsx src/directGmail.test.ts"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.12",
