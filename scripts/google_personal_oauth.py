@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError, TransportError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -43,6 +44,14 @@ def auth_help_message() -> str:
         "Requires ~/.cursor/secrets/gmail_desktop_oauth.json; creates gmail_user_token.json.\n"
         "In GCP enable Gmail + Calendar + Tasks APIs; Data access must include auth/gmail.modify, "
         "auth/calendar, and auth/tasks, then re-auth."
+    )
+
+
+def token_refresh_failed_message(error: Exception) -> str:
+    return (
+        "Saved Google OAuth token could not be refreshed; it is likely expired or revoked.\n"
+        f"{error.__class__.__name__}: {error}\n\n"
+        + auth_help_message()
     )
 
 
@@ -86,7 +95,11 @@ def get_creds(*, require_full_scopes: bool = True) -> Credentials:
     if TOKEN_FILE.is_file():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except (RefreshError, TransportError) as exc:
+            print(token_refresh_failed_message(exc), file=sys.stderr)
+            sys.exit(2)
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
         if require_full_scopes and not scopes_sufficient(creds):
             print(
@@ -113,7 +126,10 @@ def credentials_for_mcp() -> Credentials:
         raise RuntimeError(auth_help_message())
     creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except (RefreshError, TransportError) as exc:
+            raise RuntimeError(token_refresh_failed_message(exc)) from exc
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
     if not creds.valid:
         raise RuntimeError(auth_help_message())
